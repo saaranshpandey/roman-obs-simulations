@@ -1,0 +1,86 @@
+# Roman Noise, derived for Hourglass and RTAC exposure times
+# SNANA needs nea, sky_sigma, snana_zp
+noise:
+    F062:
+        nea: 5.575 
+        zodi: 0.315
+        thermal: 0.003
+        exp:
+            wide:
+                time: 60
+                # Hourglass eqn 9
+                read_noise: 12.870 
+                # Hourglass eqn 10
+                sky_sigma: 4.368
+                # Hourglass eqn 8
+                snana_zp: 31.064
+    F087:
+        nea: 6.695
+        zodi: 0.316
+        thermal: 0.003
+        exp:
+            wide:
+                time: 86
+                read_noise: 11.233
+                sky_sigma: 5.238
+                snana_zp: 31.139
+            deep:
+                time: 194
+                read_noise: 8.465
+                sky_sigma: 7.867
+                snana_zp: 32.023
+    F106:
+        nea: 7.895
+        zodi: 0.397
+        thermal: 0.003
+        exp:
+            wide:
+                time: 96
+                read_noise: 10.785
+                sky_sigma: 6.197
+                snana_zp: 31.312
+            deep: 
+                time: 294
+                read_noise: 7.491
+                sky_sigma: 10.844
+                snana_zp: 32.527
+    F129:
+        nea: 9.210
+        zodi: 0.359
+        thermal: 0.003
+        exp:
+            wide:
+                time: 153
+                read_noise: 9.147
+                sky_sigma: 7.442
+                snana_zp: 31.816
+            deep: 
+                time: 307
+                read_noise: 7.404
+                sky_sigma: 10.542
+                snana_zp: 32.572
+    F158:
+        nea: 11.140
+        zodi: 0.339
+        thermal: 0.048
+        exp:
+            wide:
+                time: 293
+                read_noise: 7.498
+                sky_sigma: 10.649
+                snana_zp: 32.544
+            deep:
+                time: 419
+                read_noise: 6.853
+                sky_sigma: 12.734
+                snana_zp: 32.933
+    F184:
+        nea: 16.335
+        zodi: 0.194
+        thermal: 0.155
+        exp:
+            deep:
+                time: 1637
+                read_noise: 5.539
+                sky_sigma: 23.902
+                snana_zp: 33.949

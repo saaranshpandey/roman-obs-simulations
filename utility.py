@@ -3,12 +3,16 @@ import pandas as pd
 import healpy as hp
 import matplotlib
 from matplotlib import pyplot as plt
-from astropy.coordinates import SkyCoord
 import astropy.units as u
 from astropy.coordinates.matrix_utilities import rotation_matrix
 from astropy.coordinates import SkyCoord, CartesianRepresentation
 from astropy.wcs import WCS
 from collections import Counter
+import yaml
+from dustmaps.config import config
+from dustmaps.sfd import fetch, SFDQuery
+import os
+import random
 
 NSIDE = 4096
 def get_vertices(df, index):
@@ -228,11 +232,13 @@ def rotate_squares_custom_astropy(df, foot_angle_deg, ra_axis, dec_axis):
     rotated_data.update({f'DEC{i}': [] for i in range(1, 5)})
     rotated_data.update({'cell': []})
     rotated_data.update({'imaging_tier': []})
+    rotated_data.update({'SCA': []})
     
     # 3) For each corner, convert -> tangent plane -> 2D rotate -> convert back
     for _, row in df.iterrows():
         rotated_data['cell'].append(row['cell'])
         rotated_data['imaging_tier'].append(row['imaging_tier'])
+        rotated_data['SCA'].append(row['SCA'])
         for i in range(1, 5):
             orig_ra = row[f'RA{i}']
             orig_dec = row[f'DEC{i}']
@@ -590,11 +596,12 @@ def create_heat_map(df, ra_axis, dec_axis, total_degrees=365, step=5, rot="astro
     """
     total_steps = total_degrees // step + 1
     heat_map = np.zeros(hp.nside2npix(NSIDE))
-
+    deg = (degree*360) / 365
     for degree in range(0, total_degrees + 1, step):
         # rotated_df = rotate_squares(df, degree)
         if rot == "astropy":
-            rotated_df = rotate_squares_custom_astropy(df, degree, ra_axis, dec_axis)
+            
+            rotated_df = rotate_squares_custom_astropy(df, deg, ra_axis, dec_axis)
 
         else:
             rotated_df = rotate_squares_custom_healpy(df, degree, ra_axis, dec_axis)
@@ -622,12 +629,12 @@ def calculate_pixel_efficiency(df, ra_axis, dec_axis, total_degrees=365, step=5,
     """
     total_steps = total_degrees // step + 1
     pixel_data = {}
-
+    deg = (degree*360) / 365
     imaging_data = {}
 
     for degree in range(0, total_degrees + 1, step):
         if rot == "astropy":
-            rotated_df = rotate_squares_custom_astropy(df, degree, ra_axis, dec_axis)
+            rotated_df = rotate_squares_custom_astropy(df, deg, ra_axis, dec_axis)
 
         else:
             rotated_df = rotate_squares_custom_healpy(df, degree, ra_axis, dec_axis)
@@ -959,7 +966,7 @@ def translate_squares_custom_7(df, shift=0.09):
     return result_df
 
 
-def translate_squares_custom_9x5_38(df, shift=0.01, cell=1):
+def translate_squares_custom_9x5_38(df, shift=0.01, cell=7):
 
     single_pointing = df.tail(18)
     min_dec = single_pointing[['DEC1', 'DEC2', 'DEC3', 'DEC4']].min().min()
@@ -968,7 +975,7 @@ def translate_squares_custom_9x5_38(df, shift=0.01, cell=1):
     min_ra = single_pointing[['RA1', 'RA2', 'RA3', 'RA4']].min().min()
     max_ra = single_pointing[['RA1', 'RA2', 'RA3', 'RA4']].max().max()
 
-    cell =0 
+    cell = 7 
     mean_dec = df[['DEC1', 'DEC2', 'DEC3', 'DEC4']].mean().mean()
 
     translation_distance_up = max_dec - min_dec - 0.09
@@ -1092,5 +1099,340 @@ def shift_centers(df, r1, d1):
     df[['RA1', 'RA2', 'RA3', 'RA4']] += (r1 - ra_cen)#1.5*translation_distance_left
     # df['cell'] = 0
     df['remove'] = 0
+
+    return df
+
+def extract_sim_data_old(exposures):
+
+    exp_sorted = dict(sorted(exposures.items(), key=lambda x: x[0]))
+
+    lib_count = 0
+    final_res = ""
+
+    header = "MJD\tID\tFLT"
+    for name, d in exp_sorted.items():
+
+        final_res += f"LIBGEN: {lib_count}; name: {name}\n"
+        final_res += f"{header}\n"
+        final_res += d['text'] + "\n\n"
+        lib_count += 1
+
+    return final_res
+
+
+def create_sim_file_old(df, ra_axis, dec_axis, mjd_st, total_degrees=365, step=5, rot="astropy"):
+    """
+    Calculates pixel efficiency and records the degrees where each pixel appears.
+    """
+    total_steps = total_degrees // step + 1
+    exposures = {}
+    mjd = mjd_st
+    for degree in range(0, total_degrees + 1, step):
+        mjd += degree
+
+        if rot == "astropy":
+            rotated_df = rotate_squares_custom_astropy(df, degree, ra_axis, dec_axis)
+
+        else:
+            rotated_df = rotate_squares_custom_healpy(df, degree, ra_axis, dec_axis)
+
+        for index in rotated_df.index:
+            cell = rotated_df.loc[index, "cell"]
+            im_tier = rotated_df.loc[index, "imaging_tier"]
+            sca = rotated_df.loc[index, "SCA"]
+
+            name = f"{im_tier}_{cell}_{sca}"
+            if name not in exposures:
+                exposures[name] = {'text': '', 'counter': 1}
+
+            ##0-wide: RZJ - repeat 10degs
+            ##5-wide: RYH - repeat 10degs
+            ##0-deep: ZYH - repeat 10degs
+            ##5-deep: ZJF - repeat 10degs
+
+            if im_tier == 'wide':
+                
+                if degree % 10 == 0:
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tR\n"
+                    exposures[name]['counter'] += 1
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tZ\n"
+                    exposures[name]['counter'] += 1
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tJ\n"
+                    exposures[name]['counter'] += 1
+
+                else:
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tR\n"
+                    exposures[name]['counter'] += 1
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tY\n"
+                    exposures[name]['counter'] += 1
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tH\n"
+                    exposures[name]['counter'] += 1
+
+            else:
+                
+                if degree % 10 == 0:
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tZ\n"
+                    exposures[name]['counter'] += 1
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tY\n"
+                    exposures[name]['counter'] += 1
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tH\n"
+                    exposures[name]['counter'] += 1
+
+                else:
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tZ\n"
+                    exposures[name]['counter'] += 1
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tJ\n"
+                    exposures[name]['counter'] += 1
+                    exposures[name]['text'] += f"{mjd}\t{exposures[name]['counter']}\tF\n"
+                    exposures[name]['counter'] += 1
+
+    res = extract_sim_data_old(exposures)
+            
+
+    return res
+
+
+def get_ra_dec(pixel_index):
+    theta, phi = hp.pix2ang(NSIDE, pixel_index)
+    ra_deg = np.degrees(phi)          # RA = longitude in degrees
+    dec_deg = 90.0 - np.degrees(theta)  # Dec = 90° - colatitude in degrees
+    return ra_deg, dec_deg
+
+def get_roman_hltd_noise_data(f_path='roman_hltds_noise.yml'):
+
+    with open(f_path) as f:
+        config = yaml.safe_load(f)
+
+    custom_dict = {}
+    filt_map = {"F062": "R", "F087": "Z", "F106": "Y", "F129": "J", "F158": "H", "F184": "F"}
+    for filt, props in config['noise'].items():
+        exp = props.get('exp', {})
+
+        # img_dict = {}
+        details_dict = {}
+        details_dict['nea'] = props['nea']
+        details_dict['zodi'] = props['zodi']
+        details_dict['thermal'] = props['thermal']
+        for img, dct in exp.items():
+            img_dict = {}
+            img_dict['time'] = dct['time']
+            img_dict['read_noise'] = dct['read_noise']
+            img_dict['sky_sigma'] = dct['sky_sigma']
+            img_dict['snana_zp'] = dct['snana_zp']
+            details_dict[img] = img_dict
+
+        custom_dict[filt_map[filt]] = details_dict
+
+    return custom_dict
+
+def initialize_dustmaps(custom_dir='./dustmaps_data'):
+
+    config['data_dir'] = custom_dir
+    sfd_folder = os.path.join(config['data_dir'], 'sfd')
+    if not os.path.isdir(sfd_folder):
+        print(f"Downloading SFD maps into {sfd_folder} …")
+        fetch()
+    else:
+        print(f"SFD maps already present in {sfd_folder}, skipping fetch.")
+
+    sfd = SFDQuery()
+    return sfd
+
+def format_row(values, widths, cols):
+    return "  ".join(f"{str(v):<{widths[col]}}" 
+                     for col, v in zip(cols, values)) + "\n"
+
+def documentation_text():
+
+    doc = "DOCUMENTATION:\n"
+    doc += "     PURPOSE: CCS SIMULATION\n"
+    doc += "     USAGE_KEY: SIMLIB_FILE\n"
+    doc += "     USAGE_CODE: snlc_sim.exe\n"
+    doc += "DOCUMENTATION_END:\n"
+    ##can add more details here
+
+    return doc
+
+def create_sim_file(pixel_data):
+    
+    # SURVEY:  ROMAN
+    # FILTERS: RZYJHFK
+    # PIXSIZE: 0.11 # arcsec
+    # PSF_UNIT: NEA_PIXEL # Noise-equiv-Area instead of PSF
+    # SOLID_ANGLE: 0.0077  # (sr) sum of all tiers
+    # TEXPOSE(WIDE):   72  84  305  95 1280   0   0
+    # TEXPOSE(DEEP):   0  72  231  366  266 1333   0
+    # BEGIN LIBGEN
+    lib_count = 0
+    final_res = documentation_text()
+    roman_yml_data = get_roman_hltd_noise_data()
+    sfd = initialize_dustmaps()
+    
+    solid_angle = hp.nside2pixarea(NSIDE, degrees = True)*len(pixel_data)
+    filt_ord = "RZYJHF"
+    final_res += f"SURVEY: ROMAN\nFILTERS: RZYJHF\nPIXSIZE: 0.109\nPSF_UNIT: NEA_PIXEL\nSOLID_ANGLE: {solid_angle:.3f}\n"
+
+    text_time_wide = "TEXPOSE(WIDE): "
+    text_time_deep = "TEXPOSE(DEEP): "
+    text_zodi = "ZODI: "
+    text_thermal = "THERMAL: "
+
+    arr_tw = []
+    arr_td = []
+    arr_z = []
+    arr_th = []
+    for filt in filt_ord:
+        time_wide = roman_yml_data[filt]['wide']['time'] if 'wide' in roman_yml_data[filt] else 0
+        time_deep = roman_yml_data[filt]['deep']['time'] if 'deep' in roman_yml_data[filt] else 0
+        zodi = roman_yml_data[filt]['zodi']
+        thermal = roman_yml_data[filt]['thermal']
+
+        arr_tw.append(time_wide)
+        arr_td.append(time_deep)
+        arr_z.append(zodi)
+        arr_th.append(thermal)
+
+    text_time_wide += "  ".join(str(x) for x in arr_tw)
+    text_time_deep += "  ".join(str(x) for x in arr_td)
+    text_zodi += "  ".join(str(x) for x in arr_z) 
+    text_thermal += "  ".join(str(x) for x in arr_th)
+   
+    final_res += text_time_wide + "\n" + text_time_deep + "\n" + text_zodi + "\n" + text_thermal + "\n"
+    final_res += "BEGIN LIBGEN\n"
+    # COL_WIDTH = 10
+    cols = ["#", "MJD", "IDEXPT", "BAND", "GAIN", "NOISE", "SKYSIG", "NEA", "ZPTAVG", "ZPTERR","MAG"]
+    widths = {c: len(c) for c in cols}     
+    widths["#"] = 2
+    widths["MJD"] = 5
+    widths["NEA"] = 6
+    widths["NOISE"] = 6
+    # header = "".join(f"{c:<{COL_WIDTH}}" for c in cols) + "\n"
+    header = format_row(cols, widths, cols)
+    
+    lst = list(range(1, len(pixel_data)+1))
+    rnd = random.Random(123)
+    rnd.shuffle(lst)
+
+    for pix, dct in pixel_data.items():
+        ra, dec = dct['ra'], dct['dec']
+        coord = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
+        ebv_val = sfd(coord)
+        final_res += f"\nLIBID: {lst[lib_count]}\n"
+        # emp_sp = "     "
+        # final_res += f"RA: {ra:.3f}{emp_sp}DECL: {dec:.3f}{emp_sp}NOBS: {3*len(dct['data'])}{emp_sp}MWEBV: {ebv_val:.3f}{emp_sp}PIXSIZE: 0.109\n"
+        # final_res += (
+        #         f"RA:    {ra:7.3f}  "
+        #         f"DECL:  {dec:8.3f}  "
+        #     )
+        final_res += f"RA: {ra:.3f} DEC: {dec:.3f}\n"
+        final_res += f"NOBS: {3*len(dct['data'])}\n"
+        final_res += f"HEALPIX: {pix} MWEBV: {ebv_val:6.3f}\n"
+        final_res += f"{header}"
+
+        for d in dct['data']:
+            filters = d['filter']
+            im_tier = d['imaging_tier']
+            
+            for filt in filters:
+                gain = 1
+                noise = roman_yml_data[filt][im_tier]['read_noise']
+                skysig = roman_yml_data[filt][im_tier]['sky_sigma'] 
+                zptavg = roman_yml_data[filt][im_tier]['snana_zp']
+                zperr = 0.005
+                mag = 99
+                nea = roman_yml_data[filt]['nea']
+    
+                row_vals = ["S:", d['mjd'], d['id'], filt, gain, noise, skysig, nea, zptavg, zperr, mag]
+                
+                # row = "".join(f"{str(v):<{COL_WIDTH}}" for v in row_vals) + "\n"
+                # final_res += row
+                final_res += format_row(row_vals, widths, cols)
+
+        final_res += f"END_LIBID: {lst[lib_count]}\n"
+        # break
+        lib_count += 1
+
+    final_res += "END LIBGEN\n"
+    return final_res
+
+
+
+def sim_file_calc(df, ra_axis, dec_axis, current_mjd, total_degrees=365, step=5, rot="astropy"):
+    """
+    Calculates pixel efficiency and records the degrees where each pixel appears.
+    """
+    ##0-wide: RZJ - repeat 10degs
+    ##5-wide: RYH - repeat 10degs
+    ##0-deep: ZYH - repeat 10degs
+    ##5-deep: ZJF - repeat 10degs
+
+    total_steps = total_degrees // step + 1
+    exposures = {}
+    mjd = int(current_mjd)
+    ids = {}
+    pixel_data = {}
+    
+    for degree in range(0, total_degrees + 1, step):
+        
+        deg = ((degree % 365)*360) / 365
+        if rot == "astropy":
+            rotated_df = rotate_squares_custom_astropy(df, deg, ra_axis, dec_axis)
+
+        else:
+            rotated_df = rotate_squares_custom_healpy(df, degree, ra_axis, dec_axis)
+
+
+        for index in rotated_df.index:
+            cell = rotated_df.loc[index, "cell"]
+            _id = f"{degree}_{cell}"
+
+            if _id not in ids:
+                ids[_id] = len(ids) + 1
+
+            id_val = ids[_id]
+            im_tier = rotated_df.loc[index, "imaging_tier"]
+            
+            vertices = get_vertices(rotated_df, index)
+            pixels = hp.query_polygon(NSIDE, vertices, inclusive=False)
+
+            for pix in pixels:
+                if pix not in pixel_data:
+                    pixel_data[pix] = {'data': []}
+                    ra, dec = get_ra_dec(pix)
+                    pixel_data[pix]['ra'] = ra
+                    pixel_data[pix]['dec'] = dec
+                    
+                dummy_dict = {}
+                dummy_dict['id'] = id_val
+                dummy_dict['mjd'] = mjd
+                dummy_dict['imaging_tier'] = im_tier
+
+                if degree % 10 == 0 and im_tier == 'wide':
+                    dummy_dict['filter'] = 'RZJ'
+
+                elif degree % 10 == 0 and im_tier == 'deep':
+                    dummy_dict['filter'] = 'ZYH'
+
+                elif degree % 10 == 5 and im_tier == "wide":
+                    dummy_dict['filter'] = 'RYH'
+
+                elif degree % 10 == 5 and im_tier == "deep":
+                    dummy_dict['filter'] = 'ZJF'
+
+                pixel_data[pix]['data'].append(dummy_dict)
+
+        mjd += step
+
+    sim_file = create_sim_file(pixel_data)
+    return sim_file, pixel_data
+
+
+def recenter_exposure(df, r1 = 242.504, d1 = 54.510):
+
+    ra_cen = df[[f'RA{i}' for i in range(1, 5)]].mean().mean()
+    dec_cen = df[[f'DEC{i}' for i in range(1, 5)]].mean().mean()
+
+    df[['DEC1', 'DEC2', 'DEC3', 'DEC4']] += (d1 - dec_cen) #2.0*translation_distance_up
+    df[['RA1', 'RA2', 'RA3', 'RA4']] += (r1 - ra_cen)#1.5*translation_distance_left
 
     return df
