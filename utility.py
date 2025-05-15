@@ -269,7 +269,7 @@ def rotate_squares_custom_astropy(df, foot_angle_deg, ra_axis, dec_axis):
     rotated_df = pd.DataFrame(rotated_data)
     return rotated_df
 
-
+###OLD - CAN IGNORE###
 def calculate_coverage(df, total_degrees=365):
     """
     Calculates the effectiveness of sky coverage after each degree rotation and overall.
@@ -354,7 +354,7 @@ def create_trans_sq(og_df, data):
 
     return new_df
 
-
+###OLD - CAN IGNORE###
 def create_trans_sq_customTest(og_df, data):
     """
     Utilised for testing purpose on a smaller region.
@@ -488,7 +488,7 @@ def visualize_healpy(new_df, mean_ra, mean_dec):
         ipix_box_single = hp.query_polygon(nside=NSIDE, vertices=vertices, inclusive=False)
         ipix_box_list.append(ipix_box_single)
     ipix_box = np.concatenate(ipix_box_list)
-    # rot = [9.7, -44] #The point we want our image to be centered on. Not the exact center of the footprint because this is just for visualization.
+    # rot = [9.7, -44] 
     # mean_ra = new_df[['RA1', 'RA2', 'RA3', 'RA4']].mean().mean()
     # mean_dec = new_df[['DEC1', 'DEC2', 'DEC3', 'DEC4']].mean().mean()
     rot = [mean_ra, mean_dec]
@@ -1102,6 +1102,7 @@ def shift_centers(df, r1, d1):
 
     return df
 
+###OLD - CAN IGNORE###
 def extract_sim_data_old(exposures):
 
     exp_sorted = dict(sorted(exposures.items(), key=lambda x: x[0]))
@@ -1119,7 +1120,7 @@ def extract_sim_data_old(exposures):
 
     return final_res
 
-
+###OLD - CAN IGNORE###
 def create_sim_file_old(df, ra_axis, dec_axis, mjd_st, total_degrees=365, step=5, rot="astropy"):
     """
     Calculates pixel efficiency and records the degrees where each pixel appears.
